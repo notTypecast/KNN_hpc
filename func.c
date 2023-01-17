@@ -221,7 +221,7 @@ double compute_distance(double *pat1, double *pat2, int lpat, int norm)
 	return dist;	// compute_root(dist);
 }
 
-void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, int distance, int index) {
+void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, int index) {
 	// use binary search to find position in sorted knn list
 	int left = 0;
     int right = knn-1;
@@ -256,8 +256,6 @@ void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, int distance, int 
 	nn_d[new_index] = distance;
 	nn_x[new_index] = index;
 
-    
-
 }
 
 void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int knn, int *nn_x, double *nn_d)
@@ -279,7 +277,6 @@ void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int 
 		// add to sorted KNN list (using binary search)
 		insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
 	}
-
 
 	return;
 }

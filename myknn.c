@@ -14,7 +14,7 @@ static double ydata[TRAINELEMS];
 
 #define MAX_NNB	256
 
-double find_knn_value(double *p, int n, int knn)
+double find_knn_value(double *p, int n, int knn, int print)
 {
 	int nn_x[MAX_NNB];
 	double nn_d[MAX_NNB];

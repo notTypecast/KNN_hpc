@@ -60,3 +60,4 @@ train.bin
 query.bin
 output.knn.txt
 output0.knn.txt
+callgrind.*

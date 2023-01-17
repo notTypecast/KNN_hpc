@@ -230,11 +230,7 @@ void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, i
 	// find position of new element
 	while (left <= right) {
 		int middle = (left + right) / 2;
-		if (distance == nn_d[middle]) {
-			new_index = middle;
-			break;
-		}
-		else if (distance < nn_d[middle]) {
+		if (distance <= nn_d[middle]) {
 			right = middle - 1;
 		}
 		else {
@@ -273,7 +269,7 @@ void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int 
 	// loop training data
 	for (int i = 0; i < npat; i++) {
 		// euclidean, get squared distance to avoid sqrt(.)
-		new_d = compute_dist(q, xdata[i], lpat);
+		new_d = compute_dist_square(q, xdata[i], lpat);
 		// add to sorted KNN list (using binary search)
 		insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
 	}

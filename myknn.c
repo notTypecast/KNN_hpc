@@ -14,15 +14,13 @@ static double ydata[TRAINELEMS];
 
 #define MAX_NNB	256
 
-double find_knn_value(double *p, int n, int knn, int print)
+double find_knn_value(double *p, int n, int knn)
 {
 	int nn_x[MAX_NNB];
 	double nn_d[MAX_NNB];
 
 	compute_knn_brute_force(xdata, p, TRAINELEMS, PROBDIM, knn, nn_x, nn_d); // brute-force /linear search
 
-	int dim = PROBDIM;
-	int nd = knn;   // number of points
 	double xd[MAX_NNB*PROBDIM];   // points
 	double fd[MAX_NNB];     // function values
 
@@ -32,13 +30,13 @@ double find_knn_value(double *p, int n, int knn, int print)
 
 	for (int i = 0; i < knn; i++) {
 		for (int j = 0; j < PROBDIM; j++) {
-			xd[i*dim+j] = xdata[nn_x[i]][j];
+			xd[i*PROBDIM+j] = xdata[nn_x[i]][j];
 		}
 	}
 
 	double fi;
 
-	fi = predict_value(dim, nd, xd, fd, p, nn_d);
+	fi = predict_value(PROBDIM, knn, xd, fd, p, nn_d);
 
 	return fi;
 }

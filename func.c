@@ -239,10 +239,6 @@ void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, i
 		}
 	}
 
-	if (left >= knn) {
-		return;
-	}
-
 	if (new_index == -1) {
 		new_index = left;
 	}
@@ -271,8 +267,11 @@ void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int 
 	for (int i = 0; i < npat; i++) {
 		// euclidean, get squared distance to avoid sqrt(.)
 		new_d = compute_dist_square(q, xdata[i], lpat);
-		// add to sorted KNN list (using binary search)
-		insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
+		// compare distance to largest neighbor distance
+		if (new_d < nn_d[knn - 1]) {
+			// add to sorted KNN list (using binary search)
+			insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
+		}
 	}
 
 	return;

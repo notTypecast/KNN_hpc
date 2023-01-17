@@ -56,3 +56,9 @@ gendata
 myknn
 q.txt
 x.txt
+output.knn.txt
+output0.knn.txt
+query.bin
+query.txt
+train.bin
+train.txt

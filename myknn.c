@@ -45,7 +45,9 @@ double find_knn_value(double *p, int n, int knn)
 
 int main(int argc, char *argv[])
 {
-	double x[PROBDIM];
+	// query data
+	double *x = malloc(QUERYELEMS*PROBDIM*sizeof(double));
+	double *y = malloc(QUERYELEMS*sizeof(double));
 
 	if (argc != 3)
 	{
@@ -60,55 +62,64 @@ int main(int argc, char *argv[])
 	xdata = (double **)malloc(TRAINELEMS*sizeof(double *));
 	for (int i = 0; i < TRAINELEMS; i++) xdata[i] = xmem + i*PROBDIM; //&mem[i*PROBDIM];
 
-	FILE *fpin = open_traindata(trainfile);
-
-	for (int i=0;i<TRAINELEMS;i++) {
-		for (int k = 0; k < PROBDIM; k++)
-			xdata[i][k] = read_nextnum(fpin);
-#if defined(SURROGATES)
-			ydata[i] = read_nextnum(fpin);
-#else
-			ydata[i] = 0;
-#endif
+	FILE *fpin = fopen(trainfile, "rb");
+	int b_rd = fread(xmem, sizeof(double), TRAINELEMS*PROBDIM, fpin);
+	if (b_rd != TRAINELEMS*PROBDIM) {
+		printf("error reading file %s\n", trainfile);
+		exit(1);
 	}
+	#if defined(SURROGATES)
+		b_rd = fread(ydata, sizeof(double), TRAINELEMS, fpin);
+		if (b_rd != TRAINELEMS) {
+			printf("error reading file %s\n", trainfile);
+		exit(1);
+	}
+	#else
+		memset(ydata, 0, TRAINELEMS*sizeof(double));
+	#endif
 	fclose(fpin);
 
-	fpin = open_querydata(queryfile);
+	fpin = fopen(queryfile, "rb");
+	b_rd = fread(x, sizeof(double), QUERYELEMS*PROBDIM, fpin);
+	if (b_rd != QUERYELEMS*PROBDIM) {
+		printf("error reading file %s\n", queryfile);
+		exit(1);
+	}
+	#if defined(SURROGATES)
+		b_rd = fread(y, sizeof(double), QUERYELEMS, fpin);
+		if (b_rd != QUERYELEMS) {
+			printf("error reading file %s\n", queryfile);
+			exit(1);
+		}
+	#else
+		memset(ydata, 0, QUERYELEMS*sizeof(double));
+	#endif
+	fclose(fpin);
 
-	//FILE *fpout = fopen("output.knn.txt","w");
-
-	double *y = malloc(QUERYELEMS*sizeof(double));
+	FILE *fpout = fopen("output.knn.txt","w");
 
 	double t0, t1, t_first = 0.0, t_sum = 0.0;
 	double sse = 0.0;
 	double err, err_sum = 0.0;
 
 	for (int i=0;i<QUERYELEMS;i++) {	/* requests */
-		for (int k = 0; k < PROBDIM; k++)
-			x[k] = read_nextnum(fpin);
-#if defined(SURROGATES)
-		y[i] = read_nextnum(fpin);
-#else
-		y[i] = 0.0;
-#endif
 		t0 = gettime();
-		double yp = find_knn_value(x, PROBDIM, NNBS);
+		double yp = find_knn_value(&x[PROBDIM*i], PROBDIM, NNBS);
 		t1 = gettime();
 		t_sum += (t1-t0);
 		if (i == 0) t_first = (t1-t0);
 
 		sse += (y[i]-yp)*(y[i]-yp);
 
-		//for (k = 0; k < PROBDIM; k++)
-		//	fprintf(fpout,"%.5f ", x[k]);
+		for (int k = 0; k < PROBDIM; k++)
+			fprintf(fpout,"%.5f ", x[k]);
 
 		err = 100.0*fabs((yp-y[i])/y[i]);
-		//fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
+		fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
 		err_sum += err;
 
 	}
-	fclose(fpin);
-	//fclose(fpout);
+	fclose(fpout);
 
 	double mse = sse/QUERYELEMS;
 	double ymean = compute_mean(y, QUERYELEMS);

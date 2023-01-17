@@ -54,5 +54,6 @@ dkms.conf
 # Other
 gendata
 myknn
-q.txt
-x.txt
+train.bin
+query.bin
+output.knn.txt

@@ -2,43 +2,10 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* I/O routines */
-FILE *open_traindata(char *trainfile)
-{
-	FILE *fp;
 
-	fp = fopen(trainfile, "r");
-	if (fp == NULL) {
-		printf("traindata; File %s not available\n", trainfile);
-		exit(1);
-	}
-	return fp;
-}
-
-FILE *open_querydata(char *queryfile)
-{
-	FILE *fp;
-
-	fp = fopen(queryfile, "r");
-	if (fp == NULL) {
-		printf("querydata: File %s not available\n", queryfile);
-		exit(1);
-	}
-	return fp;
-}
-
-double read_nextnum(FILE *fp)
-{
-	double val;
-
-	int c = fscanf(fp, "%lf", &val);
-	if (c <= 0) {
-		fprintf(stderr, "fscanf returned %d\n", c);
-		exit(1);
-	}
-	return val;
-}
 
 /* Timer */
 double gettime()
@@ -159,6 +126,15 @@ double compute_var(double *v, int n, double mean)
 	return s/n;
 }
 
+double compute_dist_square(double *v, double *w, int n) {
+	double s = 0.0;
+	for (int i = 0; i < n; ++i) {
+		s += pow(v[i] - w[i], 2);
+	}
+
+	return s;
+}
+
 double compute_dist(double *v, double *w, int n)
 {
 	int i;
@@ -245,38 +221,65 @@ double compute_distance(double *pat1, double *pat2, int lpat, int norm)
 	return dist;	// compute_root(dist);
 }
 
+void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, int distance, int index) {
+	// use binary search to find position in sorted knn list
+	int left = 0;
+    int right = knn-1;
+	int new_index = -1;
+
+	// find position of new element
+	while (left <= right) {
+		int middle = (left + right) / 2;
+		if (distance == nn_d[middle]) {
+			new_index = middle;
+			break;
+		}
+		else if (distance < nn_d[middle]) {
+			right = middle - 1;
+		}
+		else {
+			left = middle + 1;
+		}
+	}
+
+	if (left >= knn) {
+		return;
+	}
+
+	if (new_index == -1) {
+		new_index = left;
+	}
+
+	// insert new element at calculated position
+	memmove(&nn_d[new_index + 1], &nn_d[new_index], (knn - new_index - 1)*sizeof(double));
+	memmove(&nn_x[new_index + 1], &nn_x[new_index], (knn - new_index - 1)*sizeof(int));
+	nn_d[new_index] = distance;
+	nn_x[new_index] = index;
+
+    
+
+}
+
 void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int knn, int *nn_x, double *nn_d)
 {
-	int i, max_i;
-	double max_d, new_d;
+	double new_d;
 
 	/* initialize pairs of index and distance */
-	for (i = 0; i < knn; i++) {
+	for (int i = knn - 1; i >= 0; --i) {
 		nn_x[i] = -1;
 		nn_d[i] = 1e99-i;
 	}
 
-	max_d = compute_max_pos(nn_d, knn, &max_i);
-	for (i = 0; i < npat; i++) {
-		new_d = compute_dist(q, xdata[i], lpat);	// euclidean
-		if (new_d < max_d) {	// add point to the  list of knns, replace element max_i
-			nn_x[max_i] = i;
-			nn_d[max_i] = new_d;
-		}
-		max_d = compute_max_pos(nn_d, knn, &max_i);
+	// last element of nn_d KNN list is neighbor with max current distance
+
+	// loop training data
+	for (int i = 0; i < npat; i++) {
+		// euclidean, get squared distance to avoid sqrt(.)
+		new_d = compute_dist(q, xdata[i], lpat);
+		// add to sorted KNN list (using binary search)
+		insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
 	}
 
-	/* sort the knn list */
-	int temp_x, j;
-	double temp_d;
-	for (i = (knn - 1); i > 0; i--) {
-		for (j = 1; j <= i; j++) {
-			if (nn_d[j-1] > nn_d[j]) {
-				temp_d = nn_d[j-1]; nn_d[j-1] = nn_d[j]; nn_d[j] = temp_d;
-				temp_x = nn_x[j-1]; nn_x[j-1] = nn_x[j]; nn_x[j] = temp_x;
-			}
-		}
-	}
 
 	return;
 }

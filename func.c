@@ -139,6 +139,7 @@ double compute_dist(double *v, double *w, int n)
 {
 	int i;
 	double s = 0.0;
+	#pragma omp simd
 	for (i = 0; i < n; i++) {
 		s+= pow(v[i]-w[i],2);
 	}

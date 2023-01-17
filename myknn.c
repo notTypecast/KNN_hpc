@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
+#include <omp.h>
 
 #ifndef PROBDIM
 #define PROBDIM 2
@@ -100,6 +101,7 @@ int main(int argc, char *argv[])
 	double sse = 0.0;
 	double err, err_sum = 0.0;
 
+	#pragma omp parallel for
 	for (int i=0;i<QUERYELEMS;i++) {	/* requests */
 		t0 = gettime();
 		double yp = find_knn_value(&x[PROBDIM*i], PROBDIM, NNBS);

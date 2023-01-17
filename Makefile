@@ -7,9 +7,9 @@ LOW ?=  0
 HIGH ?= 2
 
 
-CFLAGS  = -DPROBDIM=$(DIM) -DNNBS=$(KNN) -DTRAINELEMS=$(TRA) -DQUERYELEMS=$(QUE) -DLB=$(LOW) -DUB=$(HIGH) -g -ggdb -O3
+CFLAGS  = -DPROBDIM=$(DIM) -DNNBS=$(KNN) -DTRAINELEMS=$(TRA) -DQUERYELEMS=$(QUE) -DLB=$(LOW) -DUB=$(HIGH) -g -ggdb -O3 -fopenmp
 CFLAGS += -DSURROGATES -Wall
-LDFLAGS += -lm
+LDFLAGS += -lm -fopenmp
 
 all: gendata myknn
 

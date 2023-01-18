@@ -7,23 +7,23 @@ LOW ?=  0
 HIGH ?= 2
 
 
-CFLAGS  = -DPROBDIM=$(DIM) -DNNBS=$(KNN) -DTRAINELEMS=$(TRA) -DQUERYELEMS=$(QUE) -DLB=$(LOW) -DUB=$(HIGH) -g -ggdb -O3 -fopenmp
+CFLAGS  = -DPROBDIM=$(DIM) -DNNBS=$(KNN) -DTRAINELEMS=$(TRA) -DQUERYELEMS=$(QUE) -DLB=$(LOW) -DUB=$(HIGH) -g -ggdb -O3
 CFLAGS += -DSURROGATES -Wall
-LDFLAGS += -lm -fopenmp
+LDFLAGS += -lm 
 
 all: gendata myknn
 
 gendata: gendata.o
-	gcc -o gendata gendata.o $(LDFLAGS)
+	mpicc -o gendata gendata.o $(LDFLAGS)
 
 gendata.o: gendata.c func.c
-	gcc $(CFLAGS) -c gendata.c
+	mpicc $(CFLAGS) -c gendata.c
 
 myknn: myknn.o
-	gcc -o myknn myknn.o $(LDFLAGS)
+	mpicc -o myknn myknn.o $(LDFLAGS)
 
 myknn.o: myknn.c func.c
-	gcc $(CFLAGS) -c myknn.c
+	mpicc $(CFLAGS) -c myknn.c
 
 clean:
 	rm -f myknn *.o gendata

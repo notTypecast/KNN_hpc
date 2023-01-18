@@ -2,7 +2,6 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
-#include <omp.h>
 
 #ifndef PROBDIM
 #define PROBDIM 2
@@ -15,31 +14,35 @@ static double ydata[TRAINELEMS];
 
 #define MAX_NNB	256
 
-double find_knn_value(double *p, int n, int knn)
+double find_knn_value(double *p, int n, int knn, int size, int rank)
 {
 	int nn_x[MAX_NNB];
 	double nn_d[MAX_NNB];
 
-	compute_knn_brute_force(xdata, p, TRAINELEMS, PROBDIM, knn, nn_x, nn_d); // brute-force /linear search
+	compute_knn_brute_force(xdata, p, TRAINELEMS, PROBDIM, knn, nn_x, nn_d, size, rank); // brute-force /linear search
 
-	double xd[MAX_NNB*PROBDIM];   // points
-	double fd[MAX_NNB];     // function values
+	if (rank == 0) {
+		double xd[MAX_NNB*PROBDIM];   // points
+		double fd[MAX_NNB];     // function values
 
-	for (int i = 0; i < knn; i++) {
-		fd[i] = ydata[nn_x[i]];
-	}
-
-	for (int i = 0; i < knn; i++) {
-		for (int j = 0; j < PROBDIM; j++) {
-			xd[i*PROBDIM+j] = xdata[nn_x[i]][j];
+		for (int i = 0; i < knn; i++) {
+			fd[i] = ydata[nn_x[i]];
 		}
+
+		for (int i = 0; i < knn; i++) {
+			for (int j = 0; j < PROBDIM; j++) {
+				xd[i*PROBDIM+j] = xdata[nn_x[i]][j];
+			}
+		}
+
+		double fi;
+
+		fi = predict_value(PROBDIM, knn, xd, fd, p, nn_d);
+
+		return fi;
 	}
 
-	double fi;
-
-	fi = predict_value(PROBDIM, knn, xd, fd, p, nn_d);
-
-	return fi;
+	return 0;
 }
 
 int main(int argc, char *argv[])
@@ -97,45 +100,60 @@ int main(int argc, char *argv[])
 
 	//FILE *fpout = fopen("output.knn.txt","w");
 
-	double t0, t1, t_first = 0.0, t_sum = 0.0;
-	double sse = 0.0;
-	double err, err_sum = 0.0;
-
-	for (int i=0;i<QUERYELEMS;i++) {	/* requests */
-		t0 = gettime();
-		double yp = find_knn_value(&x[PROBDIM*i], PROBDIM, NNBS);
-		t1 = gettime();
-		t_sum += (t1-t0);
-		if (i == 0) t_first = (t1-t0);
-
-		sse += (y[i]-yp)*(y[i]-yp);
-
-		//for (int k = 0; k < PROBDIM; k++)
-			//fprintf(fpout,"%.5f ", x[k]);
-
-		err = 100.0*fabs((yp-y[i])/y[i]);
-		// fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
-		err_sum += err;
-	}
+	int size, rank;
+	MPI_Init(NULL, NULL);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	
-	//fclose(fpout);
+	if (rank == 0) {
+		double t0, t1, t_first = 0.0, t_sum = 0.0;
+		double sse = 0.0;
+		double err, err_sum = 0.0;
 
-	double mse = sse/QUERYELEMS;
-	double ymean = compute_mean(y, QUERYELEMS);
-	double var = compute_var(y, QUERYELEMS, ymean);
-	double r2 = 1-(mse/var);
+		for (int i=0;i<QUERYELEMS;i++) {	/* requests */
+			t0 = gettime();
+			double yp = find_knn_value(&x[PROBDIM*i], PROBDIM, NNBS, size, rank);
+			t1 = gettime();
+			t_sum += (t1-t0);
+			if (i == 0) t_first = (t1-t0);
 
-	printf("Results for %d query points\n", QUERYELEMS);
-	printf("APE = %.2f %%\n", err_sum/QUERYELEMS);
-	printf("MSE = %.6f\n", mse);
-	printf("R2 = 1 - (MSE/Var) = %.6lf\n", r2);
+			sse += (y[i]-yp)*(y[i]-yp);
 
-	t_sum = t_sum*1000.0;			// convert to ms
-	t_first = t_first*1000.0;	// convert to ms
-	printf("Total time = %lf ms\n", t_sum);
-	printf("Time for 1st query = %lf ms\n", t_first);
-	printf("Time for 2..N queries = %lf ms\n", t_sum-t_first);
-	printf("Average time/query = %lf ms\n", (t_sum-t_first)/(QUERYELEMS-1));
+			//for (int k = 0; k < PROBDIM; k++)
+				//fprintf(fpout,"%.5f ", x[k]);
+
+			err = 100.0*fabs((yp-y[i])/y[i]);
+			// fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
+			err_sum += err;
+		}
+		
+		//fclose(fpout);
+
+		double mse = sse/QUERYELEMS;
+		double ymean = compute_mean(y, QUERYELEMS);
+		double var = compute_var(y, QUERYELEMS, ymean);
+		double r2 = 1-(mse/var);
+
+		printf("Results for %d query points\n", QUERYELEMS);
+		printf("APE = %.2f %%\n", err_sum/QUERYELEMS);
+		printf("MSE = %.6f\n", mse);
+		printf("R2 = 1 - (MSE/Var) = %.6lf\n", r2);
+
+		t_sum = t_sum*1000.0;			// convert to ms
+		t_first = t_first*1000.0;	// convert to ms
+		printf("Total time = %lf ms\n", t_sum);
+		printf("Time for 1st query = %lf ms\n", t_first);
+		printf("Time for 2..N queries = %lf ms\n", t_sum-t_first);
+		printf("Average time/query = %lf ms\n", (t_sum-t_first)/(QUERYELEMS-1));
+	}
+	else {
+		for (int i=0;i<QUERYELEMS;i++) {
+			find_knn_value(&x[PROBDIM*i], PROBDIM, NNBS, size, rank);
+		}
+
+	}
+
+	MPI_Finalize();
 
 	free(x);
 	free(y);

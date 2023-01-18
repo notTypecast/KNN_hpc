@@ -3,9 +3,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <omp.h>
-
-#define NUM_THREADS 4
+#include <mpi/mpi.h>
 
 /* Timer */
 double gettime()
@@ -140,7 +138,6 @@ double compute_dist(double *v, double *w, int n)
 {
 	int i;
 	double s = 0.0;
-	#pragma omp simd
 	for (i = 0; i < n; i++) {
 		s+= pow(v[i]-w[i],2);
 	}
@@ -253,53 +250,64 @@ void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, i
 }
 
 
-void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int knn, int *nn_x, double *nn_d)
+void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int knn, int *nn_x, double *nn_d, int size, int rank)
 {
 	double new_d;
 
-	// create arrays to share between threads (each gets arr[omp_get_thread_num()*knn : omp_get_thread_num()*knn + knn])
-	double *res_nn_d = (double *)malloc(knn*NUM_THREADS*sizeof(double));
-	int *res_nn_x = (int *)malloc(knn*NUM_THREADS*sizeof(int));
-
 	/* initialize pairs of index and distance */
-	#pragma omp simd
-	for (int i = NUM_THREADS*knn - 1; i >= 0; --i) {
-		res_nn_x[i] = -1;
-		res_nn_d[i] = 1e99-i;
+	for (int i = knn - 1; i >= 0; --i) {
+		nn_x[i] = -1;
+		nn_d[i] = 1e99-i;
 	}
 
+	int chunk = npat / size;
+	int leftover = npat % size;
+	
+
 	// loop training data
-	#pragma omp parallel for shared(res_nn_d, res_nn_x) private(new_d)
-	for (int i = 0; i < npat; i++) {
+	for (int i = rank*chunk; i < (chunk+1 == size ? (rank+1)*chunk + leftover : (rank+1)*chunk); i++) {
 		// euclidean, get squared distance to avoid sqrt(.)
 		new_d = compute_dist_square(q, xdata[i], lpat);
 		// compare distance to largest neighbor distance
-		if (new_d < res_nn_d[omp_get_thread_num()*knn + knn - 1]) {
+		if (new_d < nn_d[knn - 1]) {
 			// add to sorted KNN list (using binary search)
-			insert_sorted_knn_list(&res_nn_d[omp_get_thread_num()*knn], &res_nn_x[omp_get_thread_num()*knn], knn, new_d, i);
+			insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
 		}
 	}
 
-	int *indices = (int *)calloc(NUM_THREADS, sizeof(int));
-	int thread_chosen = 0;
 
-	for (int curr = 0; curr < knn; ++curr) {
-		nn_d[curr] = 1e99-1;
-		nn_x[curr] = -1;
-		for (int i = 0; i < NUM_THREADS; ++i) {
-			int idx = i*knn + indices[i];
-			if (res_nn_d[idx] < nn_d[curr]) {
-				nn_d[curr] = res_nn_d[idx];
-				nn_x[curr] = res_nn_x[idx];
-				thread_chosen = i;
+	// gather all results to first rank
+	// then calculate knn from collected arrays
+	double *gathered_d = NULL;
+	int *gathered_x = NULL;
+	if (rank == 0) {
+		 gathered_d = (double *)malloc(size*knn*sizeof(double));
+		 gathered_x = (int *)malloc(size*knn*sizeof(int));
+	}
+
+	MPI_Gather(nn_d, knn, MPI_DOUBLE, gathered_d, knn, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	MPI_Gather(nn_x, knn, MPI_INT, gathered_x, knn, MPI_INT, 0, MPI_COMM_WORLD);
+
+	if (rank == 0) {
+		int *indices = (int *)calloc(size, sizeof(int));
+		int thread_chosen = 0;
+
+		for (int curr = 0; curr < knn; ++curr) {
+			nn_d[curr] = 1e99-1;
+			nn_x[curr] = -1;
+			for (int i = 0; i < size; ++i) {
+				int idx = i*knn + indices[i];
+				if (gathered_d[idx] < nn_d[curr]) {
+					nn_d[curr] = gathered_d[idx];
+					nn_x[curr] = gathered_x[idx];
+					thread_chosen = i;
+				}
 			}
+			++indices[thread_chosen];
 		}
-		++indices[thread_chosen];
-	}
 
-	free(indices);
-	free(res_nn_d);
-	free(res_nn_x);
+		free(indices);
+	}
 
 	return;
 }

@@ -95,13 +95,12 @@ int main(int argc, char *argv[])
 	#endif
 	fclose(fpin);
 
-	FILE *fpout = fopen("output.knn.txt","w");
+	//FILE *fpout = fopen("output.knn.txt","w");
 
 	double t0, t1, t_first = 0.0, t_sum = 0.0;
 	double sse = 0.0;
 	double err, err_sum = 0.0;
 
-	#pragma omp parallel for
 	for (int i=0;i<QUERYELEMS;i++) {	/* requests */
 		t0 = gettime();
 		double yp = find_knn_value(&x[PROBDIM*i], PROBDIM, NNBS);
@@ -111,15 +110,15 @@ int main(int argc, char *argv[])
 
 		sse += (y[i]-yp)*(y[i]-yp);
 
-		for (int k = 0; k < PROBDIM; k++)
-			fprintf(fpout,"%.5f ", x[k]);
+		//for (int k = 0; k < PROBDIM; k++)
+			//fprintf(fpout,"%.5f ", x[k]);
 
 		err = 100.0*fabs((yp-y[i])/y[i]);
-		fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
+		// fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
 		err_sum += err;
-
 	}
-	fclose(fpout);
+	
+	//fclose(fpout);
 
 	double mse = sse/QUERYELEMS;
 	double ymean = compute_mean(y, QUERYELEMS);

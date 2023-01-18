@@ -3,9 +3,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <omp.h>
 
-/* I/O routines */
-
+#define NUM_THREADS 4
 
 /* Timer */
 double gettime()
@@ -128,6 +128,7 @@ double compute_var(double *v, int n, double mean)
 
 double compute_dist_square(double *v, double *w, int n) {
 	double s = 0.0;
+
 	for (int i = 0; i < n; ++i) {
 		s += pow(v[i] - w[i], 2);
 	}
@@ -251,28 +252,54 @@ void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, i
 
 }
 
+
 void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int knn, int *nn_x, double *nn_d)
 {
 	double new_d;
 
+	// create arrays to share between threads (each gets arr[omp_get_thread_num()*knn : omp_get_thread_num()*knn + knn])
+	double *res_nn_d = (double *)malloc(knn*NUM_THREADS*sizeof(double));
+	int *res_nn_x = (int *)malloc(knn*NUM_THREADS*sizeof(int));
+
 	/* initialize pairs of index and distance */
-	for (int i = knn - 1; i >= 0; --i) {
-		nn_x[i] = -1;
-		nn_d[i] = 1e99-i;
+	#pragma omp simd
+	for (int i = NUM_THREADS*knn - 1; i >= 0; --i) {
+		res_nn_x[i] = -1;
+		res_nn_d[i] = 1e99-i;
 	}
 
-	// last element of nn_d KNN list is neighbor with max current distance
-
 	// loop training data
+	#pragma omp parallel for shared(res_nn_d, res_nn_x) private(new_d)
 	for (int i = 0; i < npat; i++) {
 		// euclidean, get squared distance to avoid sqrt(.)
 		new_d = compute_dist_square(q, xdata[i], lpat);
 		// compare distance to largest neighbor distance
-		if (new_d < nn_d[knn - 1]) {
+		if (new_d < res_nn_d[omp_get_thread_num()*knn + knn - 1]) {
 			// add to sorted KNN list (using binary search)
-			insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
+			insert_sorted_knn_list(&res_nn_d[omp_get_thread_num()*knn], &res_nn_x[omp_get_thread_num()*knn], knn, new_d, i);
 		}
 	}
+
+	int *indices = (int *)calloc(NUM_THREADS, sizeof(int));
+	int thread_chosen = 0;
+
+	for (int curr = 0; curr < knn; ++curr) {
+		nn_d[curr] = 1e99-1;
+		nn_x[curr] = -1;
+		for (int i = 0; i < NUM_THREADS; ++i) {
+			int idx = i*knn + indices[i];
+			if (res_nn_d[idx] < nn_d[curr]) {
+				nn_d[curr] = res_nn_d[idx];
+				nn_x[curr] = res_nn_x[idx];
+				thread_chosen = i;
+			}
+		}
+		++indices[thread_chosen];
+	}
+
+	free(indices);
+	free(res_nn_d);
+	free(res_nn_x);
 
 	return;
 }
@@ -290,4 +317,3 @@ double predict_value(int dim, int knn, double *xdata, double *ydata, double *poi
 
 	return sum_v/knn;
 }
-

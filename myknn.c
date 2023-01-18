@@ -136,5 +136,10 @@ int main(int argc, char *argv[])
 	printf("Time for 2..N queries = %lf ms\n", t_sum-t_first);
 	printf("Average time/query = %lf ms\n", (t_sum-t_first)/(QUERYELEMS-1));
 
+	free(x);
+	free(y);
+	free(xmem);
+	free(xdata);
+
 	return 0;
 }

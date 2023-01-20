@@ -126,13 +126,11 @@ double compute_var(double *v, int n, double mean)
 	return s/n;
 }
 
-double compute_dist_square(double *v, double *w, int n) {
-	double s = 0.0;
+__device__ double compute_dist_square(double *v, double *w, int n, double *res) {
+	*res = 0.0;
 	for (int i = 0; i < n; ++i) {
-		s += pow(v[i] - w[i], 2);
+		*res += pow(v[i] - w[i], 2);
 	}
-
-	return s;
 }
 
 double compute_dist(double *v, double *w, int n)
@@ -221,7 +219,15 @@ double compute_distance(double *pat1, double *pat2, int lpat, int norm)
 	return dist;	// compute_root(dist);
 }
 
-void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, int index) {
+__global__ void initialize_xdata(double **xdata_gpu, double *xmem_gpu, int elems) {
+	int TOTAL_THREADS = gridDim.x*blockDim.x;
+	int tid = blockDim.x*blockIdx.x + threadIdx.x;
+	int chunk = elems/TOTAL_THREADS;
+
+	for (int i = tid*chunk; i < (tid+1)*chunk; ++i) xdata_gpu[i] = xmem_gpu + i*PROBDIM;
+}
+
+__device__ void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, int index) {
 	// use binary search to find position in sorted knn list
 	int left = 0;
     int right = knn-1;
@@ -243,37 +249,95 @@ void insert_sorted_knn_list(double *nn_d, int *nn_x, int knn, double distance, i
 	}
 
 	// insert new element at calculated position
-	memmove(&nn_d[new_index + 1], &nn_d[new_index], (knn - new_index - 1)*sizeof(double));
-	memmove(&nn_x[new_index + 1], &nn_x[new_index], (knn - new_index - 1)*sizeof(int));
+	for (int i = knn - 1; i > new_index; --i) {
+		nn_d[i] = nn_d[i - 1];
+		nn_x[i] = nn_x[i - 1];
+	}
 	nn_d[new_index] = distance;
 	nn_x[new_index] = index;
 
 }
 
-void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int knn, int *nn_x, double *nn_d)
-{
-	double new_d;
+__global__ void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, const int knn, int *nn_x, double *nn_d, double *sh_nn_d, int *sh_nn_x) {
+	int TOTAL_THREADS = gridDim.x*blockDim.x;
+	int tid = blockDim.x*blockIdx.x + threadIdx.x;
 
 	/* initialize pairs of index and distance */
 	for (int i = knn - 1; i >= 0; --i) {
-		nn_x[i] = -1;
-		nn_d[i] = 1e99-i;
+		sh_nn_x[tid*knn + i] = -1;
+		sh_nn_d[tid*knn + i] = 1e99-i;
 	}
 
 	// last element of nn_d KNN list is neighbor with max current distance
+	int THREAD_CHUNK = npat / TOTAL_THREADS;
 
 	// loop training data
-	for (int i = 0; i < npat; i++) {
+	double new_d;
+	for (int i = tid*THREAD_CHUNK; i < (tid+1)*THREAD_CHUNK; ++i) {
 		// euclidean, get squared distance to avoid sqrt(.)
-		new_d = compute_dist_square(q, xdata[i], lpat);
+		compute_dist_square(q, xdata[i], lpat, &new_d);
+		if (i == 689278) {
+			//printf("%d %lf\n", tid, new_d);
+		}
 		// compare distance to largest neighbor distance
-		if (new_d < nn_d[knn - 1]) {
+		if (new_d < sh_nn_d[tid*knn + knn - 1]) {
 			// add to sorted KNN list (using binary search)
-			insert_sorted_knn_list(nn_d, nn_x, knn, new_d, i);
+			insert_sorted_knn_list(&sh_nn_d[tid*knn], &sh_nn_x[tid*knn], knn, new_d, i);
 		}
 	}
 
-	return;
+	/*if (tid == 21539) {
+		for (int i = 0; i < knn; ++i) {
+			printf("%d. dist: %lf, idx: %d\n", i+1, sh_nn_d[tid*knn + i], sh_nn_x[tid*knn + i]);
+		}
+	}*/
+}
+
+__global__ void merge_computed_arrays(double **xdata, double *q, int npat, int lpat, const int knn, int *nn_x, double *nn_d, double *sh_nn_d, int *sh_nn_x) {
+	int TOTAL_THREADS = gridDim.x*blockDim.x;
+	int tid = blockDim.x*blockIdx.x + threadIdx.x;
+	double res_d[NNBS];
+	int res_x[NNBS];
+
+	if (tid == 0) {
+		printf("Initial: %lf\n", sh_nn_d[21539*knn + 0]);
+	}
+
+	// merge knn arrays created by threads
+	for (int step = 0; step < __log2f(TOTAL_THREADS); ++step) {
+		// decide if this thread should run on this step
+		if (!(tid % (int)(pow(2, step + 1)+0.5))) {
+			int other_id = tid + (int)(pow(2, step)+0.5);
+			int i = 0, j = 0;
+			for (int curr = 0; curr < knn; ++curr) {
+				if (sh_nn_d[tid*knn + i] < sh_nn_d[other_id*knn + j]) {
+					res_d[curr] = sh_nn_d[tid*knn + i];
+					res_x[curr] = sh_nn_x[tid*knn + i++];
+				}
+				else {
+					res_d[curr] = sh_nn_d[other_id*knn + j];
+					res_x[curr] = sh_nn_x[other_id*knn + j++];
+				}
+			}
+			for (int curr = 0; curr < knn; ++curr) {
+				//if (tid == 16384 && other_id==20480 && curr == 0) {
+				if (fabs(res_d[curr] - 1.159182) < 1e-6 && fabs(res_d[curr] - sh_nn_d[tid*knn + curr]) > 1e-6) {
+					printf("I am in %d which merged with %d in curr %d\n", tid, other_id, curr);
+				}
+				sh_nn_d[tid*knn + curr] = res_d[curr];
+				sh_nn_x[tid*knn + curr] = res_x[curr];
+			}
+		}
+	}
+	if (tid == 0) {
+		printf("Final: %lf\n", sh_nn_d[0]);
+	}
+	
+	/*if (tid == 0) {
+		for (int i = 0; i < knn; ++i) {
+			printf("%d. dist: %lf, idx: %d\n", i+1, sh_nn_d[tid*knn + i], sh_nn_x[tid*knn + i]);
+		}
+	}*/
 }
 
 

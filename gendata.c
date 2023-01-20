@@ -11,10 +11,10 @@
 
 int main(int argc, char *argv[])
 {
-	//double x[PROBDIM], y;
+	//float x[PROBDIM], y;
 	// store all data in a single buffer
 	// all y values are stored after all x values
-	double *to_write = (double *)malloc(TRAINELEMS*(PROBDIM + 1)*sizeof(double));
+	float *to_write = (float *)malloc(TRAINELEMS*(PROBDIM + 1)*sizeof(float));
 	
 	FILE *fp;
 
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 
 	// write training data to file
 	fp = fopen(trainfile, "wb");
-	int n = fwrite(to_write, sizeof(double), (PROBDIM + 1)*TRAINELEMS, fp);
+	int n = fwrite(to_write, sizeof(float), (PROBDIM + 1)*TRAINELEMS, fp);
 	if (n != (PROBDIM + 1)*TRAINELEMS) {
 		printf("Error writing training data to file.\n");
 	}
@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 	printf("%d data points written to %s!\n", TRAINELEMS, trainfile);
 
 	free(to_write);
-	to_write = (double *)malloc(QUERYELEMS*(PROBDIM + 1)*sizeof(double));
+	to_write = (float *)malloc(QUERYELEMS*(PROBDIM + 1)*sizeof(float));
 
 	y_start_idx = QUERYELEMS*PROBDIM;
 	for (int i=0;i<QUERYELEMS;i++)
@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
 
 	// write training data to file
 	fp = fopen(queryfile, "wb");
-	n = fwrite(to_write, sizeof(double), (PROBDIM + 1)*QUERYELEMS, fp);
+	n = fwrite(to_write, sizeof(float), (PROBDIM + 1)*QUERYELEMS, fp);
 	if (n != (PROBDIM + 1)*QUERYELEMS) {
 		printf("Error writing query data to file.\n");
 	}

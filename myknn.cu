@@ -83,11 +83,12 @@ __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pi
 			query_idx[j*idx_pitch] = curr_idx;
 		}
 
+		/*
 		if (tx == 1) {
 			for (int i = 0; i < k; ++i) {
 				printf("KNN[%d]: %f, index: %d\n", i, query_dist[i*dist_pitch], query_idx[i*idx_pitch]);
 			}
-		}
+		}*/
 
 		// get evaluation sum for all k nearest neighbors and divide by k
 		float prediction = 0.0f;
@@ -152,7 +153,7 @@ int main(int argc, char *argv[])
 	#endif
 	fclose(fpin);
 
-	float t0, t_sum;
+	double t0, t_sum;
 
 	// start timer
 	t0 = gettime();
@@ -214,8 +215,8 @@ int main(int argc, char *argv[])
 
 	t_sum = gettime() - t0;
 
-	float sse = 0.0;
-	float err_sum = 0.0;
+	double sse = 0.0;
+	double err_sum = 0.0;
 
 	// calculate errors
 	for (int i=0;i<QUERYELEMS;i++) {
@@ -223,10 +224,10 @@ int main(int argc, char *argv[])
 		err_sum += 100.0*fabs((predictions[i]-y[i])/y[i]);
 	}
 
-	float mse = sse/QUERYELEMS;
-	float ymean = compute_mean(y, QUERYELEMS);
-	float var = compute_var(y, QUERYELEMS, ymean);
-	float r2 = 1-(mse/var);
+	double mse = sse/QUERYELEMS;
+	double ymean = compute_mean(y, QUERYELEMS);
+	double var = compute_var(y, QUERYELEMS, ymean);
+	double r2 = 1-(mse/var);
 
 	printf("Results for %d query points\n", QUERYELEMS);
 	printf("APE = %.2f %%\n", err_sum/QUERYELEMS);

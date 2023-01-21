@@ -5,11 +5,11 @@
 #include <string.h>
 
 /* Timer */
-float gettime()
+double gettime()
 {
 	struct timeval tv;
 	gettimeofday(&tv, 0);
-	return (float) (tv.tv_sec+tv.tv_usec/1000000.0);
+	return (tv.tv_sec+tv.tv_usec/1000000.0);
 }
 
 /* Function to approximate */

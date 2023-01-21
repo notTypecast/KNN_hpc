@@ -34,11 +34,13 @@ int main(int argc, char *argv[])
 	int y_start_idx = TRAINELEMS*PROBDIM;
 	for (int i=0;i<TRAINELEMS;i++)
 	{
-		int row_idx = PROBDIM*i;
-		for (int k = 0; k < PROBDIM; k++)
-			to_write[row_idx + k] = get_rand(k);
+		float tmp[PROBDIM];
+		for (int k = 0; k < PROBDIM; k++) {
+			tmp[k] = get_rand(k);
+			to_write[k*TRAINELEMS + i] = tmp[k];
+		}
 
-		to_write[y_start_idx + i] = fitfun(&to_write[row_idx], PROBDIM);
+		to_write[y_start_idx + i] = fitfun(tmp, PROBDIM);
 	}
 
 	// write training data to file
@@ -57,11 +59,13 @@ int main(int argc, char *argv[])
 	y_start_idx = QUERYELEMS*PROBDIM;
 	for (int i=0;i<QUERYELEMS;i++)
 	{
-		int row_idx = PROBDIM*i;
-		for (int k = 0; k < PROBDIM; k++)
-			to_write[row_idx + k] = get_rand(k);
+		float tmp[PROBDIM];
+		for (int k = 0; k < PROBDIM; k++) {
+			tmp[k] = get_rand(k);
+			to_write[k*QUERYELEMS + i] = tmp[k];
+		}
 
-		to_write[y_start_idx + i] = fitfun(&to_write[row_idx], PROBDIM);
+		to_write[y_start_idx + i] = fitfun(tmp, PROBDIM);
 	}
 
 	// write training data to file

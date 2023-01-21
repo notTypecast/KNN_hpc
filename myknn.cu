@@ -148,6 +148,12 @@ int main(int argc, char *argv[])
 
 	double t0, t_sum = 0.0;
 
+	int err = cudaSetDevice(0);
+	if (err != cudaSuccess) {
+		printf("Couldn't set CUDA device\n");
+		exit(1);
+	}
+
 	// decide memory split
 	size_t free, total;
 	cudaMemGetInfo(&free, &total);

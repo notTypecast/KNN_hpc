@@ -15,14 +15,25 @@ static float ydata[TRAINELEMS];
 
 #define MAX_NNB	256
 
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
 
 /* CUDA Kernels */
-__global__ void computeSquaredDistanceMatrix(float *train, size_t train_pitch, float *query, size_t query_pitch, int T, int Q, int D, float *dist) {
+__global__ void computeSquaredDistanceMatrix(float *train, size_t train_pitch, float *query, size_t query_pitch, int T, int Q, int D, float *dist, size_t dist_pitch) {
 	/* Computes distance matrix of size TxQ
 	 * dist[i][j] contains the distance between train vector i and query vector j
 	 */
 	int ty = BLOCK_DIM*blockIdx.y + threadIdx.y;
 	int tx = BLOCK_DIM*blockIdx.x + threadIdx.x;
+	printf("Test %d %d\n", tx, ty);
 
 	if (ty < T && tx < Q) {
 		float sum = 0.0f;
@@ -31,7 +42,7 @@ __global__ void computeSquaredDistanceMatrix(float *train, size_t train_pitch, f
 			sum += val*val;
 		}
 
-		dist[ty*query_pitch + tx] = sum;
+		dist[ty*dist_pitch + tx] = sum;
 	}
 }
 
@@ -89,8 +100,8 @@ __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pi
 int main(int argc, char *argv[])
 {
 	// query data
-	float *x = malloc(QUERYELEMS*PROBDIM*sizeof(float));
-	float *y = malloc(QUERYELEMS*sizeof(float));
+	float *x = (float *)malloc(QUERYELEMS*PROBDIM*sizeof(float));
+	float *y = (float *)malloc(QUERYELEMS*sizeof(float));
 
 	if (argc != 3)
 	{
@@ -152,35 +163,21 @@ int main(int argc, char *argv[])
 	float *train_dev;
 	float *query_dev;
 	float *dist_dev;
-	float *idx_dev;
+	int *idx_dev;
 	size_t train_pitch_bytes, query_pitch_bytes, dist_pitch_bytes, idx_pitch_bytes;
 
-	int err0 = cudaMallocPitch((void **)&train_dev, &train_pitch_bytes, TRAINELEMS*sizeof(float), PROBDIM);
-	int err1 = cudaMallocPitch((void **)&query_dev, &query_pitch_bytes, QUERYELEMS*sizeof(float), PROBDIM);
-	int err2 = cudaMallocPitch((void **)&dist_dev, &dist_pitch_bytes, QUERYELEMS*sizeof(float), TRAINELEMS);
-	int err3 = cudaMallocPitch((void **)&idx_dev, &idx_pitch_bytes, QUERYELEMS*sizeof(int), NNBS);
+	gpuErrchk(cudaMallocPitch((void **)&train_dev, &train_pitch_bytes, TRAINELEMS*sizeof(float), PROBDIM));
+	gpuErrchk(cudaMallocPitch((void **)&query_dev, &query_pitch_bytes, QUERYELEMS*sizeof(float), PROBDIM));
+	gpuErrchk(cudaMallocPitch((void **)&dist_dev, &dist_pitch_bytes, QUERYELEMS*sizeof(float), TRAINELEMS));
+	gpuErrchk(cudaMallocPitch((void **)&idx_dev, &idx_pitch_bytes, QUERYELEMS*sizeof(int), NNBS));
 
 	// Allocate array for training data evaluations
 	float *train_eval_dev;
-	int err4 = cudaMalloc((void **)&train_eval_dev, TRAINELEMS*sizeof(float));
+	gpuErrchk(cudaMalloc((void **)&train_eval_dev, TRAINELEMS*sizeof(float)));
 
 	// Allocate array for results (predictions)
 	float *predictions_dev;
-	int err5 = cudaMalloc((void **)&predictions_dev, QUERYELEMS*sizeof(float));
-
-	if (err0 != cudaSuccess || err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess || err4 != cudaSuccess || err5 != cudaSuccess) {
-        printf("cudaMallocPitch: failed to allocate memory\n");
-		free(x);
-		free(y);
-		free(xmem);
-		cudaFree(train_dev);
-		cudaFree(query_dev);
-		cudaFree(dist_dev);
-		cudaFree(idx_dev); 
-		cudaFree(train_eval_dev);
-		cudaFree(predictions_dev);
-        return 1;
-    }
+	gpuErrchk(cudaMalloc((void **)&predictions_dev, QUERYELEMS*sizeof(float)));
 	
 	size_t train_pitch = train_pitch_bytes / sizeof(float);
 	size_t query_pitch = query_pitch_bytes / sizeof(float);
@@ -188,64 +185,27 @@ int main(int argc, char *argv[])
 	size_t idx_pitch = idx_pitch_bytes / sizeof(int);
 
 	// Transfer data to device
-	err0 = cudaMemcpy2D(train_dev, train_pitch_bytes, xmem, TRAINELEMS*sizeof(float), TRAINELEMS*sizeof(float), PROBDIM, cudaMemcpyHostToDevice);
-	err1 = cudaMemcpy2D(query_dev, query_pitch_bytes, x, QUERYELEMS*sizeof(float), QUERYELEMS*sizeof(float), PROBDIM, cudaMemcpyHostToDevice);
-	err2 = cudaMemcpy(train_eval_dev, ydata, TRAINELEMS*sizeof(float), cudaMemcpyHostToDevice);
-	if (err0 != cudaSuccess || err1 != cudaSuccess || err2 != cudaSuccess) {
-        printf("cudaMemcpy2D: failed to transfer data to device\n");
-		free(x);
-		free(y);
-		free(xmem);
-		cudaFree(train_dev);
-		cudaFree(query_dev);
-		cudaFree(dist_dev);
-		cudaFree(idx_dev); 
-		cudaFree(train_eval_dev);
-		cudaFree(predictions_dev);
-        return 1; 
-    }
+	gpuErrchk(cudaMemcpy2D(train_dev, train_pitch_bytes, xmem, TRAINELEMS*sizeof(float), TRAINELEMS*sizeof(float), PROBDIM, cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy2D(query_dev, query_pitch_bytes, x, QUERYELEMS*sizeof(float), QUERYELEMS*sizeof(float), PROBDIM, cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(train_eval_dev, ydata, TRAINELEMS*sizeof(float), cudaMemcpyHostToDevice));
 
 	/* Run CUDA kernell to compute distance matrix
 	 * We have a total of Q*T threads
 	 * Each thread computes the squared euclidian distance between one query and one training vector
 	 */
-	computeSquaredDistanceMatrix<<<dim3(QUERYELEMS/BLOCK_DIM, TRAINELEMS/BLOCK_DIM), dim3(BLOCK_DIM, BLOCK_DIM, 1)>>>(train_dev, train_pitch, query_dev, query_pitch, TRAINELEMS, QUERYELEMS, PROBDIM, dist_pitch);
-	cudaDeviceSynchronize();
-	if (cudaGetLastError() != cudaSuccess) {
-		printf("computeSquaredDistanceMatrix: error in kernel execution\n");
-		free(x);
-		free(y);
-		free(xmem);
-		cudaFree(train_dev);
-		cudaFree(query_dev);
-		cudaFree(dist_dev);
-		cudaFree(index_dev);
-		cudaFree(train_eval_dev);
-		cudaFree(predictions_dev);
-        return 1;
-	}
+	computeSquaredDistanceMatrix<<<dim3(QUERYELEMS/BLOCK_DIM, TRAINELEMS/BLOCK_DIM), dim3(BLOCK_DIM, BLOCK_DIM, 1)>>>(train_dev, train_pitch, query_dev, query_pitch, TRAINELEMS, QUERYELEMS, PROBDIM, dist_dev, dist_pitch);
+	gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaDeviceSynchronize());
 
 	/* Run CUDA kernell to sort first k distances
 	 * Each thread will perform the sorting operation for one query
 	 */
 	sortAndPredict<<<QUERYELEMS/(BLOCK_DIM*BLOCK_DIM), BLOCK_DIM*BLOCK_DIM>>>(dist_dev, dist_pitch, idx_dev, idx_pitch, TRAINELEMS, QUERYELEMS, NNBS, train_eval_dev, predictions_dev);
-	cudaDeviceSynchronize();
-	if (cudaGetLastError() != cudaSuccess) {
-		printf("sortAndPredict: error in kernel execution\n");
-		free(x);
-		free(y);
-		free(xmem);
-		cudaFree(train_dev);
-		cudaFree(query_dev);
-		cudaFree(dist_dev);
-		cudaFree(index_dev);
-		cudaFree(train_eval_dev);
-		cudaFree(predictions_dev);
-        return 1;
-	}
-
+	gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaDeviceSynchronize());
+	
 	float *predictions = (float *)malloc(QUERYELEMS*sizeof(float));
-	cudaMemcpy(predictions, predictions_dev, QUERYELEMS*sizeof(float), cudaMemcpyDeviceToHost);
+	gpuErrchk(cudaMemcpy(predictions, predictions_dev, QUERYELEMS*sizeof(float), cudaMemcpyDeviceToHost));
 
 	t_sum = gettime() - t0;
 
@@ -279,7 +239,7 @@ int main(int argc, char *argv[])
 	cudaFree(train_dev);
 	cudaFree(query_dev);
     cudaFree(dist_dev);
-    cudaFree(index_dev);
+    cudaFree(idx_dev);
 	cudaFree(train_eval_dev);
 
 	return 0;

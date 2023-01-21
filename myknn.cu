@@ -31,9 +31,8 @@ __global__ void computeSquaredDistanceMatrix(float *train, size_t train_pitch, f
 	/* Computes distance matrix of size TxQ
 	 * dist[i][j] contains the distance between train vector i and query vector j
 	 */
-	int ty = BLOCK_DIM*blockIdx.y + threadIdx.y;
-	int tx = BLOCK_DIM*blockIdx.x + threadIdx.x;
-	printf("Test %d %d\n", tx, ty);
+	int ty = blockDim.x*blockIdx.y + threadIdx.y;
+	int tx = blockDim.x*blockIdx.x + threadIdx.x;
 
 	if (ty < T && tx < Q) {
 		float sum = 0.0f;
@@ -50,7 +49,7 @@ __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pi
 	/* Sorts the elements of each column (=query) of the distance matrix, such that the first k values are sorted
 	 * Calculates prediction for query based on those neighbors
 	 */
-	int tx = BLOCK_DIM*blockIdx.x + threadIdx.x;
+	int tx = blockDim.x*blockIdx.x + threadIdx.x;
 
 	if (tx < Q) {
 		// get column representing distances for query tx
@@ -84,6 +83,11 @@ __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pi
 			query_idx[j*idx_pitch] = curr_idx;
 		}
 
+		if (tx == 1) {
+			for (int i = 0; i < k; ++i) {
+				printf("KNN[%d]: %f, index: %d\n", i, query_dist[i*dist_pitch], query_idx[i*idx_pitch]);
+			}
+		}
 
 		// get evaluation sum for all k nearest neighbors and divide by k
 		float prediction = 0.0f;
@@ -93,7 +97,7 @@ __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pi
 		prediction /= k;
 
 		// write prediction
-		predictions[tx] = prediction;		
+		predictions[tx] = prediction;	
 	}
 }
 
@@ -168,6 +172,7 @@ int main(int argc, char *argv[])
 
 	gpuErrchk(cudaMallocPitch((void **)&train_dev, &train_pitch_bytes, TRAINELEMS*sizeof(float), PROBDIM));
 	gpuErrchk(cudaMallocPitch((void **)&query_dev, &query_pitch_bytes, QUERYELEMS*sizeof(float), PROBDIM));
+	// TODO: this is too large (4GB) for TRAINELEMS=1048576
 	gpuErrchk(cudaMallocPitch((void **)&dist_dev, &dist_pitch_bytes, QUERYELEMS*sizeof(float), TRAINELEMS));
 	gpuErrchk(cudaMallocPitch((void **)&idx_dev, &idx_pitch_bytes, QUERYELEMS*sizeof(int), NNBS));
 

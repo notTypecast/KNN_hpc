@@ -1,6 +1,6 @@
 DIM ?= 16
 KNN ?= 32
-TRA ?= 1048576
+TRA ?= 262144
 QUE ?= 1024
 
 LOW ?=  0
@@ -9,7 +9,7 @@ HIGH ?= 2
 
 CFLAGS  = -DPROBDIM=$(DIM) -DNNBS=$(KNN) -DTRAINELEMS=$(TRA) -DQUERYELEMS=$(QUE) -DLB=$(LOW) -DUB=$(HIGH) -g -O3
 CFLAGS += -DSURROGATES
-NVCCFLAGS = --gpu-architecture=sm_35
+NVCCFLAGS = -O3
 LDFLAGS += -lm
 
 all: gendata myknn

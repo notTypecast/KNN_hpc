@@ -2,12 +2,11 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
+#include <openacc.h>
 
 #ifndef PROBDIM
 #define PROBDIM 2
 #endif
-
-#define BLOCK_DIM 16
 
 #include "func.c"
 
@@ -15,22 +14,11 @@ static float ydata[TRAINELEMS];
 
 #define MAX_NNB	256
 
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-   if (code != cudaSuccess) 
-   {
-      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-      if (abort) exit(code);
-   }
-}
 
 
 /* CUDA Kernels */
+/*
 __global__ void computeSquaredDistanceMatrix(float *train, size_t train_pitch, float *query, size_t query_pitch, int T, int Q, int D, float *dist, size_t dist_pitch) {
-	/* Computes distance matrix of size TxQ
-	 * dist[i][j] contains the distance between train vector i and query vector j
-	 */
 	int ty = blockDim.y*blockIdx.y + threadIdx.y;
 	int tx = blockDim.x*blockIdx.x + threadIdx.x;
 
@@ -46,9 +34,6 @@ __global__ void computeSquaredDistanceMatrix(float *train, size_t train_pitch, f
 }
 
 __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pitch, int T, int Q, int k, float *train_eval, float *predictions) {
-	/* Sorts the elements of each column (=query) of the distance matrix, such that the first k values are sorted
-	 * Calculates prediction for query based on those neighbors
-	 */
 	int tx = blockDim.x*blockIdx.x + threadIdx.x;
 
 	if (tx < Q) {
@@ -92,6 +77,72 @@ __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pi
 
 		// write prediction
 		predictions[tx] = prediction;	
+	}
+}
+*/
+
+void computeSquaredDistanceMatrix(float *train, float *query, int T, int Q, int D, float *dist) {
+	#pragma acc parallel loop present(train, query, dist)
+	for (int i = 0; i < T*Q; ++i) {
+		int train_offset = i/Q;
+		int query_offset = i%Q;
+		float sum = 0.0;
+		#pragma acc loop seq independent
+		for (int n = 0; n < D; ++n) {
+			float tmp = train[n*T + train_offset] - query[n*Q + query_offset];
+			sum += tmp*tmp;
+		}
+
+		dist[train_offset*Q + query_offset] = sum;
+	}
+}
+
+void sortAndPredict(float *restrict dist, int *restrict idx, int T, int Q, int k, float *restrict train_eval, float *restrict predictions) {
+	#pragma acc parallel loop present(dist, idx, train_eval, predictions) independent
+	for (int qi = 0; qi < Q; ++qi) {
+		// get column representing distances for query tx
+		float *restrict query_dist = &dist[qi];
+		int *restrict query_idx = &idx[qi];
+		query_idx[0] = 0;
+
+		// insertion sort
+		#pragma acc loop seq independent
+		for (int i = 1; i < T; ++i) {
+			// get next distance in query column
+			float curr_dist = query_dist[i*Q];
+			int curr_idx = i;
+
+			// if distance is larger than current largest, skip it
+			// this is fine since we only want the first k distances to be sorted
+			if (i >= k && curr_dist > query_dist[(k-1)*Q]) {
+				continue;
+			}
+
+			// starting current index (if < k) or index k, move elements to the right
+			// until the correct position for this element is found
+			int j = i < k-1 ? i : k-1;
+			#pragma acc loop seq independent
+			while (j > 0 && query_dist[(j-1)*Q] > curr_dist) {
+				query_dist[j*Q] = query_dist[(j-1)*Q];
+				query_idx[j*Q] = query_idx[(j-1)*Q];
+				--j;
+			}
+
+			// place element at the new position
+			query_dist[j*Q] = curr_dist;
+			query_idx[j*Q] = curr_idx;
+		}
+
+		// get evaluation sum for all k nearest neighbors and divide by k
+		float prediction = 0.0f;
+		#pragma acc loop seq independent
+		for (int i = 0; i < k; ++i) {
+			prediction += train_eval[query_idx[i*Q]];
+		}
+		prediction /= k;
+
+		// write prediction
+		predictions[qi] = prediction;
 	}
 }
 
@@ -148,15 +199,14 @@ int main(int argc, char *argv[])
 
 	double t0, t_sum = 0.0;
 
-	int err = cudaSetDevice(0);
-	if (err != cudaSuccess) {
-		printf("Couldn't set CUDA device\n");
-		exit(1);
-	}
+	acc_set_device_num(0, acc_device_nvidia);
 
 	// decide memory split
-	size_t free, total;
-	cudaMemGetInfo(&free, &total);
+	size_t free = acc_get_property(0, acc_device_current, acc_property_free_memory);
+	if (!free) {
+		printf("Device unavailable!\n");
+		exit(1);
+	}
 	int div = 1;
 	// make sure there is enough memory for all allocations
 	while (free < ((QUERYELEMS/div)*TRAINELEMS + 2*TRAINELEMS*NNBS + 3*(QUERYELEMS/div)*NNBS)*sizeof(float)) {
@@ -172,32 +222,18 @@ int main(int argc, char *argv[])
 	* kxQ array for training data indices 
 	* where D: vector dimensions, T: training vectors, Q: query vectors and k: nearest neighbors
 	*/
-	float *train_dev;
-	float *query_dev;
-	float *dist_dev;
-	int *idx_dev;
-	size_t train_pitch_bytes, query_pitch_bytes, dist_pitch_bytes, idx_pitch_bytes;
-
 	t0 = gettime();
-	gpuErrchk(cudaMallocPitch((void **)&train_dev, &train_pitch_bytes, TRAINELEMS*sizeof(float), PROBDIM));
-	gpuErrchk(cudaMallocPitch((void **)&query_dev, &query_pitch_bytes, query_batch*sizeof(float), PROBDIM));
-	// TODO: this is too large (4GB) for TRAINELEMS=1048576
-	gpuErrchk(cudaMallocPitch((void **)&dist_dev, &dist_pitch_bytes, query_batch*sizeof(float), TRAINELEMS));
-	gpuErrchk(cudaMallocPitch((void **)&idx_dev, &idx_pitch_bytes, query_batch*sizeof(int), NNBS));
+	float *train_dev = acc_malloc(TRAINELEMS*PROBDIM*sizeof(float));
+	float *query_dev = acc_malloc(query_batch*PROBDIM*sizeof(float));
+	float *dist_dev = acc_malloc(query_batch*TRAINELEMS*sizeof(float));
+	int *idx_dev = acc_malloc(query_batch*NNBS*sizeof(float));
 
 	// Allocate array for training data evaluations
-	float *train_eval_dev;
-	gpuErrchk(cudaMalloc((void **)&train_eval_dev, TRAINELEMS*sizeof(float)));
+	float *train_eval_dev = acc_malloc(TRAINELEMS*sizeof(float));
 
 	// Allocate array for results (predictions)
-	float *predictions_dev;
-	gpuErrchk(cudaMalloc((void **)&predictions_dev, query_batch*sizeof(float)));
+	float *predictions_dev = acc_malloc(query_batch*sizeof(float));
 	t_sum += gettime() - t0;
-	
-	size_t train_pitch = train_pitch_bytes / sizeof(float);
-	size_t query_pitch = query_pitch_bytes / sizeof(float);
-	size_t dist_pitch = dist_pitch_bytes / sizeof(float);
-	size_t idx_pitch = idx_pitch_bytes / sizeof(int);
 
 	// x_batch dimensions: PROBDIM x query_batch
 	float *x_batch = (float *)malloc(query_batch*PROBDIM*sizeof(float));
@@ -211,27 +247,17 @@ int main(int argc, char *argv[])
 		t0 = gettime();
 
 		// Transfer data to device
-		gpuErrchk(cudaMemcpy2D(train_dev, train_pitch_bytes, xmem, TRAINELEMS*sizeof(float), TRAINELEMS*sizeof(float), PROBDIM, cudaMemcpyHostToDevice));
-		gpuErrchk(cudaMemcpy2D(query_dev, query_pitch_bytes, x_batch, query_batch*sizeof(float), query_batch*sizeof(float), PROBDIM, cudaMemcpyHostToDevice));
-		gpuErrchk(cudaMemcpy(train_eval_dev, ydata, TRAINELEMS*sizeof(float), cudaMemcpyHostToDevice));
+		acc_memcpy_to_device(train_dev, xmem, TRAINELEMS*PROBDIM*sizeof(float));
+		acc_memcpy_to_device(query_dev, x_batch, query_batch*PROBDIM*sizeof(float));
+		acc_memcpy_to_device(train_eval_dev, ydata, TRAINELEMS*sizeof(float));
 
-		/* Run CUDA kernel to compute distance matrix
-		* We have a total of Q*T threads
-		* Each thread computes the squared euclidian distance between one query and one training vector
-		*/
-		computeSquaredDistanceMatrix<<<dim3(TRAINELEMS/BLOCK_DIM, query_batch/BLOCK_DIM, 1), dim3(BLOCK_DIM, BLOCK_DIM, 1)>>>(train_dev, train_pitch, query_dev, query_pitch, TRAINELEMS, query_batch, PROBDIM, dist_dev, dist_pitch);
-		gpuErrchk(cudaPeekAtLastError());
-		gpuErrchk(cudaDeviceSynchronize());
+		// Run acc kernel to compute distance matrix
+		computeSquaredDistanceMatrix(train_dev, query_dev, TRAINELEMS, query_batch, PROBDIM, dist_dev);
 
-		/* Run CUDA kernell to sort first k distances
-		* Each thread will perform the sorting operation for one query
-		*/
-		float xdim = query_batch/(BLOCK_DIM*BLOCK_DIM);
-		sortAndPredict<<<xdim > 0 ? xdim : 1, BLOCK_DIM*BLOCK_DIM>>>(dist_dev, dist_pitch, idx_dev, idx_pitch, TRAINELEMS, query_batch, NNBS, train_eval_dev, predictions_dev);
-		gpuErrchk(cudaPeekAtLastError());
-		gpuErrchk(cudaDeviceSynchronize());
+		// Run acc kernel to sort first k distances
+		sortAndPredict(dist_dev, idx_dev, TRAINELEMS, query_batch, NNBS, train_eval_dev, predictions_dev);
 		
-		gpuErrchk(cudaMemcpy(&predictions[i*query_batch], predictions_dev, query_batch*sizeof(float), cudaMemcpyDeviceToHost));
+		acc_memcpy_from_device(&predictions[i*query_batch], predictions_dev, query_batch*sizeof(float));
 
 		t_sum += gettime() - t0;
 	}
@@ -259,11 +285,11 @@ int main(int argc, char *argv[])
 	printf("Total time = %lf ms\n", t_sum);
 	printf("Average time/query = %lf ms\n", t_sum/QUERYELEMS);
 
-	cudaFree(train_dev);
-	cudaFree(query_dev);
-    cudaFree(dist_dev);
-    cudaFree(idx_dev);
-	cudaFree(train_eval_dev);
+	acc_free(train_dev);
+	acc_free(query_dev);
+    acc_free(dist_dev);
+    acc_free(idx_dev);
+	acc_free(train_eval_dev);
 
 	return 0;
 }

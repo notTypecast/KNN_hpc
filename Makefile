@@ -9,7 +9,7 @@ HIGH ?= 2
 
 CFLAGS  = -DPROBDIM=$(DIM) -DNNBS=$(KNN) -DTRAINELEMS=$(TRA) -DQUERYELEMS=$(QUE) -DLB=$(LOW) -DUB=$(HIGH) -g -O3
 CFLAGS += -DSURROGATES
-NVCCFLAGS = -O3
+PGCCFLAGS = -acc -fast -Minfo=accel
 LDFLAGS += -lm
 
 all: gendata myknn
@@ -20,11 +20,8 @@ gendata: gendata.o
 gendata.o: gendata.c func.c
 	gcc $(CFLAGS) -c gendata.c
 
-myknn: myknn.o
-	nvcc -o myknn myknn.o $(LDFLAGS)
-
-myknn.o: myknn.cu func.c
-	nvcc $(CFLAGS) $(NVCCFLAGS) -c myknn.cu
+myknn: myknn.c func.c
+	pgcc $(PGCCFLAGS) $(CFLAGS) myknn.c -o myknn $(LDFLAGS)
 
 clean:
 	rm -f myknn *.o gendata

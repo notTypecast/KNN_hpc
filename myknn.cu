@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
 		gpuErrchk(cudaPeekAtLastError());
 		gpuErrchk(cudaDeviceSynchronize());
 
-		/* Run CUDA kernell to sort first k distances
+		/* Run CUDA kernel to sort first k distances
 		* Each thread will perform the sorting operation for one query
 		*/
 		float xdim = query_batch/(BLOCK_DIM*BLOCK_DIM);

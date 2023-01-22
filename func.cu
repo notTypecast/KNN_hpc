@@ -299,10 +299,6 @@ __global__ void merge_computed_arrays(double **xdata, double *q, int npat, int l
 	double res_d[NNBS];
 	int res_x[NNBS];
 
-	if (tid == 0) {
-		printf("Initial: %lf\n", sh_nn_d[21539*knn + 0]);
-	}
-
 	// merge knn arrays created by threads
 	for (int step = 0; step < __log2f(TOTAL_THREADS); ++step) {
 		// decide if this thread should run on this step
@@ -320,17 +316,10 @@ __global__ void merge_computed_arrays(double **xdata, double *q, int npat, int l
 				}
 			}
 			for (int curr = 0; curr < knn; ++curr) {
-				//if (tid == 16384 && other_id==20480 && curr == 0) {
-				if (fabs(res_d[curr] - 1.159182) < 1e-6 && fabs(res_d[curr] - sh_nn_d[tid*knn + curr]) > 1e-6) {
-					printf("I am in %d which merged with %d in curr %d\n", tid, other_id, curr);
-				}
 				sh_nn_d[tid*knn + curr] = res_d[curr];
 				sh_nn_x[tid*knn + curr] = res_x[curr];
 			}
 		}
-	}
-	if (tid == 0) {
-		printf("Final: %lf\n", sh_nn_d[0]);
 	}
 	
 	/*if (tid == 0) {

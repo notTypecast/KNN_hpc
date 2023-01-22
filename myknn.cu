@@ -12,6 +12,10 @@ inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
     }
 }
 
+/* This code is very inefficient
+ * See the improved implementation on cuda branch
+ */
+
 #ifndef PROBDIM
 #define PROBDIM 2
 #endif

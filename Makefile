@@ -9,7 +9,6 @@ HIGH ?= 2
 
 CFLAGS  = -DPROBDIM=$(DIM) -DNNBS=$(KNN) -DTRAINELEMS=$(TRA) -DQUERYELEMS=$(QUE) -DLB=$(LOW) -DUB=$(HIGH) -g -O3
 CFLAGS += -DSURROGATES
-NVCCFLAGS = --gpu-architecture=sm_35
 LDFLAGS += -lm
 
 all: gendata myknn

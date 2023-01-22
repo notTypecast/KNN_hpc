@@ -21,24 +21,13 @@ double find_knn_value(double *p, int n, int knn)
 
 	compute_knn_brute_force(xdata, p, TRAINELEMS, PROBDIM, knn, nn_x, nn_d); // brute-force /linear search
 
-	double xd[MAX_NNB*PROBDIM];   // points
 	double fd[MAX_NNB];     // function values
 
 	for (int i = 0; i < knn; i++) {
 		fd[i] = ydata[nn_x[i]];
 	}
 
-	for (int i = 0; i < knn; i++) {
-		for (int j = 0; j < PROBDIM; j++) {
-			xd[i*PROBDIM+j] = xdata[nn_x[i]][j];
-		}
-	}
-
-	double fi;
-
-	fi = predict_value(PROBDIM, knn, xd, fd, p, nn_d);
-
-	return fi;
+	return predict_value(PROBDIM, knn, fd, p, nn_d);;
 }
 
 int main(int argc, char *argv[])

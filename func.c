@@ -278,7 +278,7 @@ void compute_knn_brute_force(double **xdata, double *q, int npat, int lpat, int 
 
 
 /* compute an approximation based on the values of the neighbors */
-double predict_value(int dim, int knn, double *xdata, double *ydata, double *point, double *dist)
+double predict_value(int dim, int knn, double *ydata, double *point, double *dist)
 {
 	int i;
 	double sum_v = 0.0;
@@ -290,7 +290,7 @@ double predict_value(int dim, int knn, double *xdata, double *ydata, double *poi
 	return sum_v/knn;
 }
 
-double predict_value_IDW(int dim, int knn, double *xdata, double *ydata, double *point, double *dist)
+double predict_value_IDW(int dim, int knn, double *ydata, double *point, double *dist)
 {
 	int i;
 	double sum_v = 0.0;
@@ -305,7 +305,7 @@ double predict_value_IDW(int dim, int knn, double *xdata, double *ydata, double 
 	return sum_v/sum_w;
 }
 
-double predict_value_CVI(int dim, int knn, double *xdata, double *ydata, double *point, double *dist)
+double predict_value_CVI(int dim, int knn, double *ydata, double *point, double *dist)
 {
 	return ydata[0];
 }

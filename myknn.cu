@@ -181,7 +181,6 @@ int main(int argc, char *argv[])
 	t0 = gettime();
 	gpuErrchk(cudaMallocPitch((void **)&train_dev, &train_pitch_bytes, TRAINELEMS*sizeof(float), PROBDIM));
 	gpuErrchk(cudaMallocPitch((void **)&query_dev, &query_pitch_bytes, query_batch*sizeof(float), PROBDIM));
-	// TODO: this is too large (4GB) for TRAINELEMS=1048576
 	gpuErrchk(cudaMallocPitch((void **)&dist_dev, &dist_pitch_bytes, query_batch*sizeof(float), TRAINELEMS));
 	gpuErrchk(cudaMallocPitch((void **)&idx_dev, &idx_pitch_bytes, query_batch*sizeof(int), NNBS));
 

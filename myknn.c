@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
+#include <omp.h>
 
 #ifndef PROBDIM
 #define PROBDIM 2
@@ -83,12 +84,14 @@ int main(int argc, char *argv[])
 	#endif
 	fclose(fpin);
 
-	FILE *fpout = fopen("output.knn.txt","w");
+	//FILE *fpout = fopen("output.knn.txt","w");
 
-	double t0, t1, t_first = 0.0, t_sum = 0.0;
+	double t0, t1, t_first = 0.0, t_sum = 0.0, real_time_start, real_time;
 	double sse = 0.0;
 	double err, err_sum = 0.0;
 
+	real_time_start = gettime();
+	#pragma omp parallel for private(t0, t1, err) reduction(+: t_sum, sse, err_sum)
 	for (int i=0;i<QUERYELEMS;i++) {	/* requests */
 		t0 = gettime();
 		double yp = find_knn_value(&x[PROBDIM*i], PROBDIM, NNBS);
@@ -98,15 +101,16 @@ int main(int argc, char *argv[])
 
 		sse += (y[i]-yp)*(y[i]-yp);
 
-		for (int k = 0; k < PROBDIM; k++)
-			fprintf(fpout,"%.5f ", x[k]);
+		//for (int k = 0; k < PROBDIM; k++)
+			//fprintf(fpout,"%.5f ", x[k]);
 
 		err = 100.0*fabs((yp-y[i])/y[i]);
-		fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
+		//fprintf(fpout,"%.5f %.5f %.2f\n", y[i], yp, err);
 		err_sum += err;
 
 	}
-	fclose(fpout);
+	real_time = gettime() - real_time_start;
+	//fclose(fpout);
 
 	double mse = sse/QUERYELEMS;
 	double ymean = compute_mean(y, QUERYELEMS);
@@ -118,9 +122,10 @@ int main(int argc, char *argv[])
 	printf("MSE = %.6f\n", mse);
 	printf("R2 = 1 - (MSE/Var) = %.6lf\n", r2);
 
+	real_time = real_time*1000.0;
 	t_sum = t_sum*1000.0;			// convert to ms
 	t_first = t_first*1000.0;	// convert to ms
-	printf("Total time = %lf ms\n", t_sum);
+	printf("Total time = %lf ms\n", real_time);
 	printf("Time for 1st query = %lf ms\n", t_first);
 	printf("Time for 2..N queries = %lf ms\n", t_sum-t_first);
 	printf("Average time/query = %lf ms\n", (t_sum-t_first)/(QUERYELEMS-1));

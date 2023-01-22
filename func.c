@@ -290,3 +290,22 @@ double predict_value(int dim, int knn, double *xdata, double *ydata, double *poi
 	return sum_v/knn;
 }
 
+double predict_value_IDW(int dim, int knn, double *xdata, double *ydata, double *point, double *dist)
+{
+	int i;
+	double sum_v = 0.0;
+	double sum_w = 0.0;
+	// inverse square distance
+	for (i = 0; i < knn; i++) {
+		double w = sqrt(1/dist[i]);
+		sum_v += ydata[i]*w;
+		sum_w += w;
+	}
+
+	return sum_v/sum_w;
+}
+
+double predict_value_CVI(int dim, int knn, double *xdata, double *ydata, double *point, double *dist)
+{
+	return ydata[0];
+}

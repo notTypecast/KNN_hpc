@@ -101,14 +101,15 @@ int main(int argc, char *argv[])
 	float *x = (float *)malloc(QUERYELEMS*PROBDIM*sizeof(float));
 	float *y = (float *)malloc(QUERYELEMS*sizeof(float));
 
-	if (argc != 3)
+	if (argc != 3 && argc != 4)
 	{
-		printf("usage: %s <trainfile> <queryfile>\n", argv[0]);
+		printf("usage: %s <trainfile> <queryfile> (<devicenum>)\n", argv[0]);
 		exit(1);
 	}
 
 	char *trainfile = argv[1];
 	char *queryfile = argv[2];
+	int devnum = argc == 3 ? 0 : atoi(argv[3]);
 
 	float *xmem = (float *)malloc(TRAINELEMS*PROBDIM*sizeof(float));
 
@@ -148,7 +149,7 @@ int main(int argc, char *argv[])
 
 	double t0, t_sum = 0.0;
 
-	int err = cudaSetDevice(0);
+	int err = cudaSetDevice(devnum);
 	if (err != cudaSuccess) {
 		printf("Couldn't set CUDA device\n");
 		exit(1);

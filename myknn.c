@@ -82,7 +82,7 @@ __global__ void sortAndPredict(float *dist, int dist_pitch, int *idx, int idx_pi
 */
 
 void computeSquaredDistanceMatrix(float *train, float *query, int T, int Q, int D, float *dist) {
-	#pragma acc parallel loop present(train, query, dist)
+	#pragma acc parallel loop deviceptr(train, query, dist)
 	for (int i = 0; i < T*Q; ++i) {
 		int train_offset = i/Q;
 		int query_offset = i%Q;
@@ -98,7 +98,7 @@ void computeSquaredDistanceMatrix(float *train, float *query, int T, int Q, int 
 }
 
 void sortAndPredict(float *restrict dist, int *restrict idx, int T, int Q, int k, float *restrict train_eval, float *restrict predictions) {
-	#pragma acc parallel loop present(dist, idx, train_eval, predictions) independent
+	#pragma acc parallel loop deviceptr(dist, idx, train_eval, predictions) independent
 	for (int qi = 0; qi < Q; ++qi) {
 		// get column representing distances for query tx
 		float *restrict query_dist = &dist[qi];

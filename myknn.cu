@@ -160,7 +160,7 @@ int main(int argc, char *argv[])
 	cudaMemGetInfo(&free, &total);
 	int div = 1;
 	// make sure there is enough memory for all allocations
-	while (free < ((QUERYELEMS/div)*TRAINELEMS + 2*TRAINELEMS*NNBS + 3*(QUERYELEMS/div)*NNBS)*sizeof(float)) {
+	while (free < (((long)QUERYELEMS/div)*TRAINELEMS + 2*TRAINELEMS*NNBS + 3*(QUERYELEMS/div)*NNBS)*sizeof(float)) {
 		while (QUERYELEMS % ++div);
 	}
 
